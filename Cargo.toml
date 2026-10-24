@@ -1,0 +1,32 @@
+[package]
+name = "tvision-gui"
+version = "0.1.0"
+edition = "2021"
+description = "Turbo Vision (tvision-rs) в графическом окне: тот же API, Windows / macOS / Linux"
+license = "MIT"
+
+# Вся логика интерфейса (представления, группы, диалоги, редактор...) берётся
+# из tvision-rs без изменений. Этот крейт добавляет только «экран» —
+# графическое окно вместо терминала (реализацию трейта `platform::Backend`).
+[dependencies]
+tvision-rs = { path = "../tvision-rs" }
+# Кроссплатформенное окно и события (Win32 / Cocoa / X11 / Wayland).
+winit = "0.30"
+# Вывод готового кадра в окно без GPU (просто массив пикселей).
+softbuffer = "0.4"
+# Растеризация шрифтов TrueType/OpenType (чистый Rust).
+fontdue = "0.9"
+
+[lib]
+name = "tvision_gui"
+path = "src/lib.rs"
+
+[[example]]
+name = "hello"
+
+[[example]]
+name = "tvedit"
+
+[[example]]
+name = "tvdemo"
+path = "examples/tvdemo/main.rs"
