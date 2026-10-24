@@ -170,7 +170,7 @@ impl View for AsciiChart {
         let mut fdc = dc.sub(self.win.group.vs.extent(), Frame::palette());
         let active = self.win.group.vs.is_active();
         let (attr, l, m, r) = if active { (fdc.get_color(0x0503), '╟', '─', '╢') } else { (fdc.get_color(0x0101), '├', '─', '┤') };
-        let a = (attr & 0xFF) as u8;
+        let a = color::lo(attr);
         fdc.write_char(0, y, l, a, 1);
         fdc.write_char(1, y, m, a, w - 2);
         fdc.write_char(w - 1, y, r, a, 1);

@@ -157,8 +157,11 @@ impl Renderer {
     /// Рисует ячейку (или две — для широкого символа).
     fn draw_cell(&mut self, x: usize, y: usize, cell: Cell, span: usize) {
         let (cw, ch) = (self.cell_w(), self.cell_h());
-        let fg = self.palette[(cell.attr & 0x0F) as usize];
-        let bg = self.palette[(cell.attr >> 4) as usize];
+        // Цвета BIOS и номера xterm 0–15 берутся из палитры окна (её можно
+        // задать в `GuiConfig::palette`), остальные 240 цветов xterm-256 —
+        // стандартные (куб 6×6×6 и оттенки серого).
+        let fg = tvision::color::fg_rgb(cell.attr, &self.palette);
+        let bg = tvision::color::bg_rgb(cell.attr, &self.palette);
         let w = cw * span;
         let (px0, py0) = (x * cw, y * ch);
         if px0 >= self.width || py0 >= self.height {
@@ -285,6 +288,22 @@ mod tests {
     }
 
     #[test]
+    fn draws_256_colors() {
+        use tvision::color::{attr256, with_bg256, xterm_rgb};
+        let mut r = renderer();
+        let mut scr = ScreenBuffer::new(10, 3);
+        scr.clear(with_bg256(0x07, 236)); // фон — серый xterm 236
+        *scr.get_mut(0, 0) = Cell::new('█', attr256(208, 17)); // оранжевый блок
+        *scr.get_mut(2, 0) = Cell::new(' ', attr256(15, 4)); // xterm 4 — синий из палитры окна
+        let f = Frame { screen: scr, cursor: None, insert: false };
+        r.update(&f, true);
+        let cw = r.cell_w();
+        assert_eq!(r.pixels()[cw + 1], xterm_rgb(236));
+        assert_eq!(r.pixels()[1], xterm_rgb(208));
+        assert_eq!(r.pixels()[2 * cw + 1], crate::VGA_PALETTE[1]);
+    }
+
+    #[test]
     fn draws_background_and_blocks() {
         let mut r = renderer();
         let mut scr = ScreenBuffer::new(10, 3);
@@ -309,7 +328,7 @@ mod tests {
         let (cw, ch) = (r.cell_w(), r.cell_h());
         let at = |r: &Renderer| r.pixels()[(ch + 1) * r.width + 2 * cw + 1];
         assert_eq!(at(&r), 0xFFFFFF); // чёрный фон инвертирован
-        // Фаза «погашен»: ячейка рисуется заново без курсора.
+                                      // Фаза «погашен»: ячейка рисуется заново без курсора.
         r.update(&f, false);
         assert_eq!(at(&r), 0x000000);
         // Курсор переехал — старая ячейка чистая.

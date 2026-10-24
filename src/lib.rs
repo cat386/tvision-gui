@@ -92,4 +92,4 @@ mod render;
 mod app_window;
 
 pub use backend::{run, set_screen_size, set_title, GuiBackend, ProgramExt};
-pub use config::{GuiConfig, VGA_PALETTE};
+pub use config::{GuiConfig, GRUVBOX_PALETTE, VGA_PALETTE};

@@ -15,6 +15,7 @@ pub struct GuiBackend;           // impl tvision::platform::Backend
 pub trait ProgramExt;            // Program::with_window, with_window_config
 pub struct GuiConfig;
 pub const VGA_PALETTE: [u32; 16];
+pub const GRUVBOX_PALETTE: [u32; 16];
 ```
 
 ---
@@ -220,6 +221,15 @@ pub const VGA_PALETTE: [u32; 16];
 Стандартные цвета текстового режима VGA в формате `0x00RRGGBB`, в порядке
 цветов BIOS (0 — чёрный, 1 — синий ... 15 — белый). Таблица — в
 [разделе 3](03-configuration.md#палитра).
+
+## `GRUVBOX_PALETTE`
+
+```rust
+pub const GRUVBOX_PALETTE: [u32; 16];
+```
+
+16 цветов темы gruvbox (тёмной) в порядке BIOS — палитра окна по
+умолчанию (`GuiConfig::palette`). То же, что `tvision::color::GRUVBOX_RGB`.
 
 ---
 

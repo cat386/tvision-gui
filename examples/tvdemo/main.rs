@@ -110,7 +110,8 @@ struct TvDemo {
     event_viewer: Option<ViewId>,
     /// Номер следующего окна просмотра файла (`winNumber`).
     win_number: i16,
-    /// Индекс палитры для «Video mode»: цветная → ч/б → монохромная.
+    /// Индекс палитры для «Video mode»: gruvbox → классическая цветная →
+    /// ч/б → монохромная.
     video_mode: usize,
     /// Строки последней показанной темы справки (для тестов).
     last_help: Vec<String>,
@@ -305,15 +306,15 @@ impl TvDemo {
 
     /// «Video mode»: в оригинале переключал 25/43 строки. В терминале число
     /// строк задаёт сам терминал, поэтому здесь переключаются палитры:
-    /// цветная → чёрно-белая → монохромная.
+    /// gruvbox → классическая цветная → чёрно-белая → монохромная.
     fn video_mode(&mut self, app: &mut Program) {
-        self.video_mode = (self.video_mode + 1) % 3;
-        app.palette = match self.video_mode {
-            0 => color::palettes::APP_COLOR,
-            1 => color::palettes::APP_BLACK_WHITE,
-            _ => color::palettes::APP_MONOCHROME,
-        }
-        .to_vec();
+        use color::palettes::{APP_BLACK_WHITE, APP_COLOR, APP_MONOCHROME, GRUVBOX};
+        const MODES: [&[Attr]; 4] = [GRUVBOX, APP_COLOR, APP_BLACK_WHITE, APP_MONOCHROME];
+        // Текущий режим узнаём по палитре: в 16-цветном терминале программа
+        // начинает с классической палитры, а не с gruvbox.
+        let cur = MODES.iter().position(|m| app.palette == *m).unwrap_or(self.video_mode);
+        self.video_mode = (cur + 1) % MODES.len();
+        app.palette = MODES[self.video_mode].to_vec();
     }
 
     /// Сохранить рабочий стол (`saveDesktop`): виды окон и их границы,

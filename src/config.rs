@@ -11,6 +11,13 @@ pub const VGA_PALETTE: [u32; 16] = [
     0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
 ];
 
+/// 16 цветов терминальной темы [gruvbox](https://github.com/morhetz/gruvbox)
+/// (тёмной) в порядке BIOS — палитра окна **по умолчанию**. Сама программа
+/// по умолчанию рисуется палитрой `color::palettes::GRUVBOX` (256 цветов);
+/// эти 16 цветов видны там, где атрибут задан цветом BIOS (например, у
+/// классической палитры `APP_COLOR`).
+pub const GRUVBOX_PALETTE: [u32; 16] = tvision::color::GRUVBOX_RGB;
+
 /// Параметры окна. Создаётся через [`GuiConfig::new`] и методы-«строители»:
 ///
 /// ```
@@ -55,7 +62,7 @@ impl Default for GuiConfig {
             rows: 25,
             font_size: 16.0,
             font_path: None,
-            palette: VGA_PALETTE,
+            palette: GRUVBOX_PALETTE,
             cursor_blink: true,
             resizable: true,
             fullscreen: false,

@@ -56,5 +56,5 @@ fn app_main() -> std::io::Result<()> {
 
 fn main() -> std::io::Result<()> {
     // Окно — в главном потоке (обязательно для macOS), программа — в своём.
-    run(GuiConfig::new("Привет, Turbo Vision"), app_main)
+    run(GuiConfig::new("Привет, Turbo Vision").font_size(24.0), app_main)
 }
