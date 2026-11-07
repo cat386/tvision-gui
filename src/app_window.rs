@@ -239,14 +239,47 @@ impl App {
     }
 
     /// Меняет размер шрифта (Ctrl+= / Ctrl+- / Ctrl+0) или масштаб монитора.
+    ///
+    /// Обычное окно при этом **масштабируется**: число символов на экране
+    /// остаётся прежним, а размер окна в пикселях подгоняется под новый
+    /// шрифт (крупнее шрифт — больше окно). Если окно на новом шрифте не
+    /// помещается на монитор, оно ограничивается монитором и символов
+    /// становится меньше. Развёрнутое и полноэкранное окно своего размера
+    /// не меняют — в них меняется число символов.
     fn reload_font(&mut self) {
         let Some(g) = &mut self.gfx else { return };
         let scale = g.window.scale_factor() as f32;
         let font = FontSet::load(self.cfg.font_path.as_deref(), self.font_size * scale);
-        g.window.set_resize_increments(Some(PhysicalSize::new(font.cell_w as u32, font.cell_h as u32)));
+        let (cw, ch) = (font.cell_w as u32, font.cell_h as u32);
+        g.window.set_resize_increments(Some(PhysicalSize::new(cw, ch)));
         g.renderer.set_font(font);
         g.window.request_redraw();
-        self.update_grid();
+
+        let scalable = g.window.fullscreen().is_none() && !g.window.is_maximized() && g.window.is_minimized() != Some(true);
+        if scalable {
+            // Сколько символов поместится на мониторе (с запасом на рамку
+            // окна и панель задач).
+            let (mut cols, mut rows) = (self.grid.x.max(1) as u32, self.grid.y.max(1) as u32);
+            if let Some(m) = g.window.current_monitor() {
+                let ms = m.size();
+                cols = cols.min((ms.width.saturating_sub(16) / cw).max(10));
+                rows = rows.min((ms.height.saturating_sub(80) / ch).max(4));
+            }
+            let want = PhysicalSize::new(cols * cw, rows * ch);
+            match g.window.request_inner_size(want) {
+                // Размер применён сразу (обычно в Windows).
+                Some(got) => {
+                    g.renderer.resize(got.width as usize, got.height as usize);
+                    self.update_grid();
+                }
+                // Размер применится позже — придёт событие Resized, и сетка
+                // пересчитается там. До тех пор программе ничего не сообщаем,
+                // чтобы она не перестраивалась под промежуточный размер.
+                None => {}
+            }
+        } else {
+            self.update_grid();
+        }
         self.note_geometry();
     }
 
