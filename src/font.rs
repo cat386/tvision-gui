@@ -278,3 +278,262 @@ fn fc_match(pattern: &str) -> Option<PathBuf> {
     let ok = p.extension().map(|e| matches!(e.to_string_lossy().to_lowercase().as_str(), "ttf" | "otf" | "ttc")).unwrap_or(false);
     (ok && p.is_file()).then_some(p)
 }
+
+// ----------------------------------------------------------------------
+// Список моноширинных шрифтов системы (для диалога настроек)
+// ----------------------------------------------------------------------
+
+/// Моноширинный шрифт, найденный в системе.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FontInfo {
+    /// Название семейства, например «Consolas» или «DejaVu Sans Mono».
+    pub name: String,
+    /// Файл шрифта.
+    pub path: PathBuf,
+}
+
+/// Все моноширинные шрифты системы с обычным начертанием, по алфавиту.
+///
+/// Файлы не загружаются целиком: из каждого читаются только каталог таблиц,
+/// таблица `name` (название и начертание) и таблицы `post` / `OS/2`
+/// (признак моноширинности). Поэтому просмотр нескольких сотен шрифтов
+/// занимает доли секунды. Список кэшируется.
+pub fn monospace_fonts() -> Vec<FontInfo> {
+    static CACHE: std::sync::OnceLock<Vec<FontInfo>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(scan_fonts).clone()
+}
+
+fn scan_fonts() -> Vec<FontInfo> {
+    let mut files = Vec::new();
+    for d in font_dirs() {
+        collect_files(&d, 0, &mut files);
+    }
+    // Известные моноширинные шрифты — даже если в файле не стоит признак.
+    let (known, _) = candidates();
+    let known: Vec<PathBuf> = known.into_iter().map(|(p, _)| p).collect();
+
+    let mut out: Vec<FontInfo> = Vec::new();
+    for f in files {
+        let Some(meta) = read_meta(&f) else { continue };
+        if !(meta.fixed || known.contains(&f)) || !meta.regular {
+            continue;
+        }
+        // Цветные шрифты эмодзи и образцы — не для текста программы.
+        let lower = meta.family.to_lowercase();
+        if lower.contains("emoji") || lower.contains("sample") {
+            continue;
+        }
+        if out.iter().any(|i| i.name.eq_ignore_ascii_case(&meta.family)) {
+            continue;
+        }
+        out.push(FontInfo { name: meta.family, path: f });
+    }
+    out.sort_by_key(|i| i.name.to_lowercase());
+    out
+}
+
+/// Каталоги со шрифтами для текущей ОС.
+fn font_dirs() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    #[cfg(windows)]
+    {
+        let root = std::env::var("WINDIR").or_else(|_| std::env::var("SystemRoot")).unwrap_or_else(|_| "C:\\Windows".into());
+        v.push(PathBuf::from(root).join("Fonts"));
+        if let Ok(p) = std::env::var("LOCALAPPDATA") {
+            v.push(PathBuf::from(p).join("Microsoft\\Windows\\Fonts"));
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        v.push(PathBuf::from("/System/Library/Fonts"));
+        v.push(PathBuf::from("/Library/Fonts"));
+        if let Ok(h) = std::env::var("HOME") {
+            v.push(PathBuf::from(h).join("Library/Fonts"));
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        v.push(PathBuf::from("/usr/share/fonts"));
+        v.push(PathBuf::from("/usr/local/share/fonts"));
+        if let Ok(h) = std::env::var("HOME") {
+            v.push(PathBuf::from(&h).join(".local/share/fonts"));
+            v.push(PathBuf::from(&h).join(".fonts"));
+        }
+        if let Ok(x) = std::env::var("XDG_DATA_HOME") {
+            v.push(PathBuf::from(x).join("fonts"));
+        }
+    }
+    v
+}
+
+/// Файлы .ttf / .otf / .ttc в каталоге и его подкаталогах (до 4 уровней).
+fn collect_files(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if depth < 4 {
+                collect_files(&p, depth + 1, out);
+            }
+        } else if p.extension().map(|x| matches!(x.to_string_lossy().to_lowercase().as_str(), "ttf" | "otf" | "ttc")).unwrap_or(false) {
+            out.push(p);
+        }
+    }
+}
+
+/// Что удалось узнать о шрифте из его таблиц.
+struct FontMeta {
+    family: String,
+    /// Моноширинный (`post.isFixedPitch` или `OS/2.panose`).
+    fixed: bool,
+    /// Обычное начертание (не жирный, не курсив).
+    regular: bool,
+}
+
+/// Читает название и признаки шрифта (первого в коллекции .ttc).
+fn read_meta(path: &Path) -> Option<FontMeta> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut rd = |off: u64, len: usize| -> Option<Vec<u8>> {
+        f.seek(SeekFrom::Start(off)).ok()?;
+        let mut b = vec![0u8; len];
+        f.read_exact(&mut b).ok()?;
+        Some(b)
+    };
+    let be16 = |b: &[u8], i: usize| -> usize { u16::from_be_bytes([b[i], b[i + 1]]) as usize };
+    let be32 = |b: &[u8], i: usize| -> u64 { u32::from_be_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]) as u64 };
+
+    // Коллекция: берём первый шрифт.
+    let head = rd(0, 12)?;
+    let base = if &head[0..4] == b"ttcf" { be32(&rd(12, 4)?, 0) } else { 0 };
+    let dir = rd(base, 12)?;
+    let n = be16(&dir, 4);
+    if n == 0 || n > 200 {
+        return None;
+    }
+    let recs = rd(base + 12, n * 16)?;
+    let table = |tag: &[u8; 4]| -> Option<(u64, usize)> {
+        (0..n).map(|i| &recs[i * 16..i * 16 + 16]).find(|r| &r[0..4] == tag).map(|r| (be32(r, 8), be32(r, 12) as usize))
+    };
+    let (name_off, name_len) = table(b"name")?;
+    let post = table(b"post");
+    let os2 = table(b"OS/2");
+
+    let mut fixed = false;
+    if let Some((off, len)) = post {
+        if len >= 16 {
+            let b = rd(off, 16)?;
+            fixed |= be32(&b, 12) != 0;
+        }
+    }
+    if let Some((off, len)) = os2 {
+        if len >= 42 {
+            let b = rd(off, 42)?;
+            // panose[3] (bProportion) == 9 — моноширинный.
+            fixed |= b[32 + 3] == 9;
+        }
+    }
+
+    let name = rd(name_off, name_len.min(1 << 20))?;
+    if name.len() < 6 {
+        return None;
+    }
+    let count = be16(&name, 2);
+    let strings = be16(&name, 4);
+    // nameID → (приоритет, текст). Лучше всего — Windows, английский (0x409);
+    // затем любой Windows; затем Macintosh Roman.
+    let mut best: [(u8, String); 3] = Default::default();
+    for i in 0..count {
+        let r = 6 + i * 12;
+        if r + 12 > name.len() {
+            break;
+        }
+        let (platform, lang, id) = (be16(&name, r), be16(&name, r + 4), be16(&name, r + 6));
+        let (len, off) = (be16(&name, r + 8), be16(&name, r + 10));
+        let slot = match id {
+            1 => 0,  // семейство
+            2 => 1,  // начертание
+            16 => 2, // «типографское» семейство
+            _ => continue,
+        };
+        let start = strings + off;
+        let Some(raw) = name.get(start..start + len) else { continue };
+        let (prio, text) = match platform {
+            3 => {
+                let u: Vec<u16> = raw.chunks(2).filter(|c| c.len() == 2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+                (if lang == 0x409 { 3 } else { 2 }, String::from_utf16_lossy(&u))
+            }
+            1 => (1, raw.iter().map(|&b| b as char).collect()),
+            _ => continue,
+        };
+        if prio > best[slot].0 {
+            best[slot] = (prio, text);
+        }
+    }
+    let family = if !best[2].1.trim().is_empty() { best[2].1.trim().to_string() } else { best[0].1.trim().to_string() };
+    if family.is_empty() {
+        return None;
+    }
+    let sub = best[1].1.trim().to_lowercase();
+    let regular = sub.is_empty() || matches!(sub.as_str(), "regular" | "normal" | "book" | "roman" | "medium" | "обычный" | "standard");
+    Some(FontMeta { family, fixed, regular })
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    /// Простейший файл TrueType с таблицами `name` и `post`.
+    fn fake_font(family: &str, sub: &str, fixed: bool) -> Vec<u8> {
+        let utf16 = |s: &str| s.encode_utf16().flat_map(|c| c.to_be_bytes()).collect::<Vec<u8>>();
+        let (f, s) = (utf16(family), utf16(sub));
+        // Таблица name: 2 записи (nameID 1 и 2, Windows, en-US).
+        let mut name = Vec::new();
+        name.extend([0, 0, 0, 2, 0, 6 + 24]);
+        let rec = |id: u16, len: usize, off: usize| {
+            let mut r = vec![0, 3, 0, 1, 0x04, 0x09];
+            r.extend(id.to_be_bytes());
+            r.extend((len as u16).to_be_bytes());
+            r.extend((off as u16).to_be_bytes());
+            r
+        };
+        name.extend(rec(1, f.len(), 0));
+        name.extend(rec(2, s.len(), f.len()));
+        name.extend(&f);
+        name.extend(&s);
+        let mut post = vec![0u8; 32];
+        post[15] = fixed as u8;
+        // Каталог таблиц: 2 таблицы.
+        let mut out = vec![0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0];
+        let name_off = 12 + 32;
+        let post_off = name_off + name.len();
+        let entry = |tag: &[u8; 4], off: usize, len: usize| {
+            let mut e = tag.to_vec();
+            e.extend([0, 0, 0, 0]);
+            e.extend((off as u32).to_be_bytes());
+            e.extend((len as u32).to_be_bytes());
+            e
+        };
+        out.extend(entry(b"name", name_off, name.len()));
+        out.extend(entry(b"post", post_off, post.len()));
+        out.extend(name);
+        out.extend(post);
+        out
+    }
+
+    #[test]
+    fn reads_name_and_fixed_pitch() {
+        let dir = std::env::temp_dir().join(format!("tvgui-fonts-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let a = dir.join("mono.ttf");
+        std::fs::write(&a, fake_font("Тестовый Моно", "Regular", true)).unwrap();
+        let m = read_meta(&a).unwrap();
+        assert_eq!(m.family, "Тестовый Моно");
+        assert!(m.fixed && m.regular);
+        let b = dir.join("bold.ttf");
+        std::fs::write(&b, fake_font("Другой", "Bold", false)).unwrap();
+        let m = read_meta(&b).unwrap();
+        assert!(!m.fixed && !m.regular);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

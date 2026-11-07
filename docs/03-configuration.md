@@ -12,7 +12,9 @@ let cfg = GuiConfig::new("Редактор")
     .palette(VGA_PALETTE)
     .cursor_blink(true)
     .resizable(true)
-    .fullscreen(false);
+    .fullscreen(false)
+    .theme("Gruvbox")              // тема оформления (раздел 11)
+    .remember_settings(true);      // запоминать выбор в диалоге настроек
 
 run(cfg, app_main)
 ```
@@ -30,6 +32,11 @@ run(cfg, app_main)
 | `cursor_blink: bool` | `cursor_blink(on)` | `true` | мигает ли курсор |
 | `resizable: bool` | `resizable(on)` | `true` | можно ли менять размер окна мышью |
 | `fullscreen: bool` | `fullscreen(on)` | `false` | открыть окно сразу на весь экран |
+| `theme: Option<String>` | `theme(name)` | `None` | тема оформления: палитра программы и окна ([раздел 11](11-settings.md#темы)) |
+| `remember_settings: bool` | `remember_settings(on)` | `true` | запоминать выбор пользователя в [диалоге настроек](11-settings.md) и восстанавливать его при запуске |
+
+Сохранённые пользователем тема, шрифт и размер важнее значений из кода, а
+переменные окружения — важнее сохранённых.
 
 `GuiConfig::default()` — то же, что `new` с именем исполняемого файла в
 заголовке. Все поля публичные, их можно менять и напрямую.

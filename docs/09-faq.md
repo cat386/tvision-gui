@@ -57,7 +57,8 @@ cargo run --example json_table -- ../tvision-rs/examples/data/books.json
 
 ### Шрифт слишком мелкий или крупный
 
-* во время работы — Ctrl+= / Ctrl+- / Ctrl+0;
+* во время работы — Ctrl+= / Ctrl+- / Ctrl+0 или [диалог настроек](11-settings.md),
+  если он есть в программе (там же выбирается шрифт и тема);
 * в коде — `GuiConfig::font_size(px)`;
 * без перекомпиляции — `TVISION_GUI_FONT_SIZE=20`.
 

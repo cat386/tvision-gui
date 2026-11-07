@@ -15,6 +15,8 @@ use tvision_gui::*;
 
 // Команды приложения (как в `tvedit.h`).
 const CM_CHANGE_DRCT: u16 = 102;
+/// Стандартный диалог настроек окна (тема, шрифт, размер шрифта).
+const CM_SETTINGS: u16 = 106;
 const CM_SHOW_CLIP: u16 = 105;
 
 struct EditorApp {
@@ -58,6 +60,9 @@ impl AppHandler for EditorApp {
             cm::OPEN => self.file_open(app),
             cm::NEW => self.open_editor(app, Path::new("")),
             CM_CHANGE_DRCT => self.change_dir(app),
+            CM_SETTINGS => {
+                settings_dialog(app);
+            }
             CM_SHOW_CLIP => {
                 let t = app.ctx.clipboard.get();
                 let text = if t.is_empty() { "(пусто)".to_string() } else { t };
@@ -88,6 +93,7 @@ fn app_main() -> std::io::Result<()> {
                 .item("Сохранить ~к~ак...", cm::SAVE_AS)
                 .separator()
                 .item("Сменить ~п~апку...", CM_CHANGE_DRCT)
+                .item("Нас~т~ройки окна...", CM_SETTINGS)
                 .item("О~б~олочка ОС", cm::DOS_SHELL)
                 .item_key("В~ы~ход", cm::QUIT, kb::ALT_X, "Alt-X"),
         )

@@ -12,6 +12,8 @@ use tvision_gui::*;
 
 /// Своя команда приложения (`GreetThemCmd`).
 const GREET_THEM_CMD: u16 = 100;
+/// Стандартный диалог настроек окна (тема, шрифт, размер шрифта).
+const SETTINGS_CMD: u16 = 101;
 
 /// Аналог класса `THelloApp`.
 struct HelloApp;
@@ -34,6 +36,9 @@ impl AppHandler for HelloApp {
         if ev.command() == Some(GREET_THEM_CMD) {
             self.greeting_box(app);
             ev.clear();
+        } else if ev.command() == Some(SETTINGS_CMD) {
+            settings_dialog(app);
+            ev.clear();
         }
     }
 }
@@ -42,7 +47,7 @@ impl AppHandler for HelloApp {
 fn app_main() -> std::io::Result<()> {
     let menu = Menu::new().submenu(
         "~П~ривет",
-        Menu::new().item_key("П~р~иветствие...", GREET_THEM_CMD, kb::alt('G'), "Alt-G").separator().item_key("~В~ыход", cm::QUIT, kb::ALT_X, "Alt-X"),
+        Menu::new().item_key("П~р~иветствие...", GREET_THEM_CMD, kb::alt('G'), "Alt-G").item("~Н~астройки...", SETTINGS_CMD).separator().item_key("~В~ыход", cm::QUIT, kb::ALT_X, "Alt-X"),
     );
     let status = vec![StatusDef::all(vec![StatusItem::new("~Alt-X~ Выход", kb::ALT_X, cm::QUIT), StatusItem::new("", kb::F10, cm::MENU)])];
 

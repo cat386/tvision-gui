@@ -47,7 +47,7 @@ static PENDING: Mutex<Option<Connection>> = Mutex::new(None);
 /// Настройки для окна, которое `GuiBackend::new()` создаёт сам (без `run`).
 static CONFIG: Mutex<Option<GuiConfig>> = Mutex::new(None);
 /// Связь с окном для [`set_title`].
-static PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
+pub(crate) static PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
 
 /// Создаёт окно-приложение и концы каналов к нему.
 fn connect(event_loop: &EventLoop<UserEvent>, cfg: GuiConfig) -> (Connection, App) {
@@ -56,7 +56,7 @@ fn connect(event_loop: &EventLoop<UserEvent>, cfg: GuiConfig) -> (Connection, Ap
     let (ev_tx, ev_rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
     *PROXY.lock().unwrap() = Some(proxy.clone());
-    let app = App::new(cfg.with_env(), shared.clone(), ev_tx, ready_tx);
+    let app = App::new(cfg.with_saved().with_env(), shared.clone(), ev_tx, ready_tx);
     (Connection { events: ev_rx, proxy, shared, ready: ready_rx }, app)
 }
 
@@ -321,10 +321,15 @@ pub trait ProgramExt: Sized {
 
 impl ProgramExt for Program {
     fn with_window(menu: Option<Menu>, status: Option<Vec<StatusDef>>) -> io::Result<Self> {
-        Ok(Program::new(Box::new(GuiBackend::new()?), menu, status))
+        let mut app = Program::new(Box::new(GuiBackend::new()?), menu, status);
+        // Тема из настроек (`GuiConfig::theme` или сохранённая пользователем).
+        crate::settings::apply_saved_settings(&mut app);
+        Ok(app)
     }
 
     fn with_window_config(cfg: GuiConfig, menu: Option<Menu>, status: Option<Vec<StatusDef>>) -> io::Result<Self> {
-        Ok(Program::new(Box::new(GuiBackend::with_config(cfg)?), menu, status))
+        let mut app = Program::new(Box::new(GuiBackend::with_config(cfg)?), menu, status);
+        crate::settings::apply_saved_settings(&mut app);
+        Ok(app)
     }
 }

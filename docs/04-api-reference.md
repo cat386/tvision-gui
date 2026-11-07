@@ -16,7 +16,25 @@ pub trait ProgramExt;            // Program::with_window, with_window_config
 pub struct GuiConfig;
 pub const VGA_PALETTE: [u32; 16];
 pub const GRUVBOX_PALETTE: [u32; 16];
+
+// Диалог настроек и оформление (раздел 11)
+pub fn settings_dialog(app: &mut Program) -> bool;
+pub struct Theme { pub name, pub name_en, pub app_palette, pub window_palette }
+pub fn themes() -> Vec<Theme>;
+pub fn find_theme(name: &str) -> Option<Theme>;
+pub fn apply_theme(app: &mut Program, theme: &Theme);
+pub fn set_window_palette(palette: [u32; 16]);
+pub fn set_font(path: Option<&Path>, size: f32);
+pub fn current_settings() -> Option<GuiSettings>;
+pub fn apply_saved_settings(app: &mut Program);
+pub struct GuiSettings { pub theme, pub font, pub font_size }   // load, save, path, parse
+pub fn monospace_fonts() -> Vec<FontInfo>;
+pub struct FontInfo { pub name: String, pub path: PathBuf }
+pub const FONT_SIZE_MIN: i64 = 6;
+pub const FONT_SIZE_MAX: i64 = 96;
 ```
+
+Функции диалога настроек подробно описаны в [разделе 11](11-settings.md#те-же-действия-из-кода).
 
 ---
 

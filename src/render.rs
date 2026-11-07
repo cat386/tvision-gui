@@ -78,6 +78,15 @@ impl Renderer {
         self.invalidate();
     }
 
+    /// Новая палитра окна (16 цветов BIOS): кадр перерисовывается целиком.
+    pub fn set_palette(&mut self, palette: [u32; 16]) {
+        if palette != self.palette {
+            self.palette = palette;
+            self.pixels.fill(self.palette[0]);
+            self.invalidate();
+        }
+    }
+
     /// Забыть, что нарисовано: следующий кадр рисуется целиком.
     pub fn invalidate(&mut self) {
         self.shown = None;

@@ -68,6 +68,13 @@
 //!   (как пункт меню «Выход»); если программа не отвечает больше 2 секунд,
 //!   повторное закрытие завершает процесс принудительно.
 //!
+//! ## Диалог настроек
+//!
+//! [`settings_dialog`] — стандартный диалог: тема оформления ([`themes`]),
+//! моноширинный шрифт системы и размер шрифта. Изменения видны сразу, выбор
+//! запоминается между запусками ([`GuiSettings`],
+//! [`GuiConfig::remember_settings`]).
+//!
 //! ## Язык надписей
 //!
 //! Язык встроенных надписей tvision-rs (`locale::set_language`) хранится
@@ -99,7 +106,13 @@ mod config;
 mod font;
 mod keys;
 mod render;
+mod settings;
 mod app_window;
 
 pub use backend::{run, set_screen_size, set_title, GuiBackend, ProgramExt};
 pub use config::{GuiConfig, GRUVBOX_PALETTE, VGA_PALETTE};
+pub use font::{monospace_fonts, FontInfo};
+pub use settings::{
+    apply_saved_settings, apply_theme, current_settings, find_theme, set_font, set_window_palette, settings_dialog, themes, GuiSettings, Theme,
+    FONT_SIZE_MAX, FONT_SIZE_MIN,
+};

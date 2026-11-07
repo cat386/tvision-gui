@@ -47,6 +47,14 @@ pub struct GuiConfig {
     pub resizable: bool,
     /// Открыть сразу на весь экран.
     pub fullscreen: bool,
+    /// Тема оформления по названию (см. [`crate::themes`]): задаёт и
+    /// палитру программы, и 16 цветов окна. `None` — палитра программы по
+    /// умолчанию (gruvbox) и палитра окна из поля `palette`.
+    pub theme: Option<String>,
+    /// Запоминать выбор пользователя в диалоге настроек
+    /// ([`crate::settings_dialog`]) и восстанавливать его при запуске.
+    /// Сохранённые тема, шрифт и размер важнее значений из кода.
+    pub remember_settings: bool,
 }
 
 impl Default for GuiConfig {
@@ -66,6 +74,8 @@ impl Default for GuiConfig {
             cursor_blink: true,
             resizable: true,
             fullscreen: false,
+            theme: None,
+            remember_settings: true,
         }
     }
 }
@@ -116,6 +126,43 @@ impl GuiConfig {
     /// Открыть окно на весь экран.
     pub fn fullscreen(mut self, on: bool) -> Self {
         self.fullscreen = on;
+        self
+    }
+
+    /// Тема оформления по названию (см. [`crate::themes`]).
+    ///
+    /// ```
+    /// use tvision_gui::GuiConfig;
+    /// let cfg = GuiConfig::new("Программа").theme("Классическая");
+    /// assert_eq!(cfg.theme.as_deref(), Some("Классическая"));
+    /// ```
+    pub fn theme(mut self, name: &str) -> Self {
+        self.theme = Some(name.to_string());
+        self
+    }
+
+    /// Запоминать ли настройки, выбранные в диалоге настроек.
+    pub fn remember_settings(mut self, on: bool) -> Self {
+        self.remember_settings = on;
+        self
+    }
+
+    /// Применяет сохранённые настройки пользователя (если включено
+    /// `remember_settings` и файл настроек есть) и тему: палитра окна
+    /// берётся из темы.
+    pub(crate) fn with_saved(mut self) -> Self {
+        if self.remember_settings {
+            if let Some(s) = crate::settings::GuiSettings::load() {
+                if s.theme.is_some() {
+                    self.theme = s.theme;
+                }
+                self.font_path = s.font;
+                self = self.font_size(s.font_size);
+            }
+        }
+        if let Some(t) = self.theme.as_deref().and_then(crate::settings::find_theme) {
+            self.palette = t.window_palette;
+        }
         self
     }
 

@@ -43,6 +43,10 @@ pub(crate) enum UserEvent {
     Visible(bool),
     /// Подогнать окно под заданное число столбцов и строк.
     Grid(u16, u16),
+    /// Сменить шрифт: файл (`None` — системный) и размер (логические пиксели).
+    SetFont(Option<std::path::PathBuf>, f32),
+    /// Сменить 16 цветов BIOS окна.
+    SetPalette([u32; 16]),
 }
 
 /// Всё, что появляется после создания окна.
@@ -156,6 +160,12 @@ impl App {
         let context = softbuffer::Context::new(window.clone()).map_err(|e| format!("softbuffer: {}", e))?;
         let surface = softbuffer::Surface::new(&context, window.clone()).map_err(|e| format!("softbuffer: {}", e))?;
         let mut renderer = Renderer::new(font, self.cfg.palette);
+        // Диалог настроек и программа видят, с какими настройками открыто окно.
+        crate::settings::init_current(
+            crate::settings::GuiSettings { theme: self.cfg.theme.clone(), font: self.cfg.font_path.clone(), font_size: self.font_size },
+            self.cfg.palette,
+            self.cfg.remember_settings,
+        );
         let inner = window.inner_size();
         renderer.resize(inner.width as usize, inner.height as usize);
         Ok(Gfx { window, _context: context, surface, renderer })
@@ -209,6 +219,7 @@ impl App {
             };
             if new != self.font_size {
                 self.font_size = new;
+                crate::settings::note_font_size(new);
                 self.reload_font();
             }
             return true;
@@ -315,6 +326,18 @@ impl ApplicationHandler<UserEvent> for App {
                         let (cw, ch) = (g.renderer.cell_w() as u32, g.renderer.cell_h() as u32);
                         let _ = g.window.request_inner_size(PhysicalSize::new(cw * cols as u32, ch * rows as u32));
                     }
+                }
+            }
+            UserEvent::SetFont(path, size) => {
+                self.cfg.font_path = path;
+                self.font_size = size;
+                self.reload_font();
+            }
+            UserEvent::SetPalette(p) => {
+                self.cfg.palette = p;
+                if let Some(g) = &mut self.gfx {
+                    g.renderer.set_palette(p);
+                    g.window.request_redraw();
                 }
             }
             UserEvent::Visible(v) => {

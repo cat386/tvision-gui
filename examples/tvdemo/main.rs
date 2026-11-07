@@ -48,6 +48,8 @@ const CM_RESTORE_DESKTOP: u16 = 111;
 const CM_EVENT_VIEW: u16 = 112;
 const CM_CH_BACKGROUND: u16 = 113;
 const CM_VIDEO_MODE: u16 = 115;
+/// Стандартный диалог настроек окна tvision-gui (тема, шрифт, размер).
+const CM_GUI_SETTINGS: u16 = 116;
 
 /// Контексты справки (`demohelp.h`, генерирует `tvhc`).
 #[allow(dead_code)]
@@ -414,6 +416,9 @@ impl AppHandler for TvDemo {
             CM_SAVE_DESKTOP => self.save_desktop(app),
             CM_RESTORE_DESKTOP => self.retrieve_desktop(app),
             CM_VIDEO_MODE => self.video_mode(app),
+            CM_GUI_SETTINGS => {
+                tvision_gui::settings_dialog(app);
+            }
             cm::DOS_SHELL => app.dos_shell("Введите EXIT, чтобы вернуться..."),
             cm::HELP => self.help(app),
             _ => return,
@@ -490,6 +495,7 @@ fn menu() -> Menu {
                 .item("~Ц~вета...", CM_COLOR)
                 .help(hc::O_COLORS)
                 .item("~Ф~он...", CM_CH_BACKGROUND)
+                .item("~Ш~рифт и тема...", CM_GUI_SETTINGS)
                 .submenu(
                     "~Р~абочий стол",
                     Menu::new()
@@ -547,6 +553,8 @@ fn app_main() -> std::io::Result<()> {
     // каждого потока, поэтому включаем его здесь, в потоке программы.
     locale::set_language(locale::Language::Ru);
     let (mut app, mut demo) = build(Box::new(GuiBackend::new()?));
+    // Тема, выбранная в диалоге «Шрифт и тема» (сохраняется между запусками).
+    tvision_gui::apply_saved_settings(&mut app);
     // Файлы из командной строки (шаблоны — через диалог открытия).
     for arg in std::env::args().skip(1) {
         let mut spec = arg.clone();

@@ -91,7 +91,21 @@ GuiConfig::new("Заголовок")
     .cursor_blink(true)
     .resizable(true)
     .fullscreen(false)
+    .theme("Классическая")        // тема: Gruvbox, Классическая, Сумерки, ...
+    .remember_settings(true)      // запоминать выбор в диалоге настроек
 ```
+
+**Стандартный диалог настроек** — тема, шрифт и размер шрифта, с
+предпросмотром на лету и запоминанием выбора между запусками:
+
+```rust
+if ev.command() == Some(CM_SETTINGS) {
+    tvision_gui::settings_dialog(app);
+    ev.clear();
+}
+```
+
+Подробнее — [docs/11-settings.md](docs/11-settings.md).
 
 Переменные окружения (важнее настроек в коде): `TVISION_GUI_FONT` — файл шрифта,
 `TVISION_GUI_FONT_SIZE` — размер шрифта.
