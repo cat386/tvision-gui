@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tvision::platform::{Backend, RawEvent};
-use tvision::{Key, KeyEvent, Menu, Mods, Point, Program, ScreenBuffer, StatusDef};
+use tvision::{cm, Menu, Point, Program, ScreenBuffer, StatusDef};
 use winit::event_loop::{EventLoop, EventLoopProxy};
 
 use crate::config::GuiConfig;
@@ -88,9 +88,15 @@ where
     let proxy = conn.proxy.clone();
     *PENDING.lock().unwrap() = Some(conn);
 
+    // Язык надписей tvision-rs хранится отдельно для каждого потока.
+    // Переносим выбранный в `main` язык в поток программы, чтобы
+    // `locale::set_language` до `run` тоже действовал.
+    let lang = tvision::locale::language();
+
     let worker = std::thread::Builder::new()
         .name("tvision-app".into())
         .spawn(move || {
+            tvision::locale::set_language(lang);
             // Окно закроется, даже если программа завершится паникой.
             struct CloseOnDrop(EventLoopProxy<UserEvent>);
             impl Drop for CloseOnDrop {
@@ -211,6 +217,16 @@ impl GuiBackend {
         Ok(GuiBackend { events: conn.events, proxy: conn.proxy, shared: conn.shared, size, last: None, orphan_reads: 0 })
     }
 
+    /// То же, что [`GuiBackend::new`], но в «коробке» — замена для
+    /// `platform::default_backend()` из tvision-rs:
+    ///
+    /// ```ignore
+    /// let app = Program::new(GuiBackend::boxed()?, menu, status);
+    /// ```
+    pub fn boxed() -> io::Result<Box<dyn Backend>> {
+        Ok(Box::new(Self::new()?))
+    }
+
     /// Настройки для окна, которое откроет следующий `GuiBackend::new()`
     /// без [`run`]. Внутри `run` используются настройки, переданные в `run`.
     pub fn set_config(cfg: GuiConfig) {
@@ -241,14 +257,14 @@ impl Backend for GuiBackend {
             }
             Err(RecvTimeoutError::Timeout) => None,
             Err(RecvTimeoutError::Disconnected) => {
-                // Окна больше нет. Просим программу выйти «по-хорошему» (Alt+X),
-                // а если она не реагирует — завершаем процесс.
+                // Окна больше нет. Просим программу выйти «по-хорошему»
+                // (`cm::QUIT`), а если она не реагирует — завершаем процесс.
                 std::thread::sleep(timeout);
                 self.orphan_reads += 1;
                 if self.orphan_reads > 50 {
                     std::process::exit(0);
                 }
-                Some(RawEvent::Key(KeyEvent::new(Key::Char('x'), Mods::ALT)))
+                Some(RawEvent::Command(cm::QUIT))
             }
         }
     }

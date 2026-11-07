@@ -33,6 +33,13 @@ cargo run --example tvdemo   # tvdemo: калькулятор, календар�
 cargo test                   # тесты псевдографики и отрисовки
 ```
 
+Кроме того, в окне запускаются все примеры tvision-rs: `table`, `treeview`,
+`three_panes`, `lfm`, `progress`, `colors`, `json_parse`, `json_table`,
+`json_load`, `guide_contacts`, `demo` и уроки `learn_01_hello` …
+`learn_08_todo`. Они сгенерированы из исходников tvision-rs; после обновления
+tvision-rs пересоздайте их командой `cargo run --example sync_examples`.
+Подробнее — [docs/10-examples.md](docs/10-examples.md).
+
 ## Перевод программы с терминала в окно
 
 ```toml
@@ -59,7 +66,7 @@ fn main() -> std::io::Result<()> {
 |---------------------------------------|-------------------------------------------------|
 | `use tvision::*;`                     | `use tvision_gui::*;` (реэкспорт всего tvision) |
 | `Program::with_terminal(m, s)`        | `Program::with_window(m, s)`                    |
-| `platform::default_backend()?`        | `Box::new(GuiBackend::new()?)`                  |
+| `platform::default_backend()?`        | `GuiBackend::boxed()?`                          |
 | `fn main() { ... }`                   | `fn main() { run(GuiConfig::new(..), app_main) }` |
 
 Обёртка `run` нужна потому, что на macOS окно может работать только в главном
@@ -98,7 +105,7 @@ GuiConfig::new("Заголовок")
 | Alt+Enter           | полный экран / окно                             |
 | Ctrl+= / Ctrl+-     | крупнее / мельче шрифт (размер экрана в символах меняется) |
 | Ctrl+0              | исходный размер шрифта                          |
-| крестик окна        | посылает программе Alt+X; второе нажатие — принудительный выход |
+| крестик окна        | посылает программе `cm::QUIT`; если программа не отвечает — повторное нажатие закрывает принудительно |
 
 Остальные клавиши переводятся так же, как в консоли Windows у tvision-rs:
 Alt/Ctrl+буква — по физической клавише (Alt+X работает в русской раскладке),

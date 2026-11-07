@@ -28,7 +28,7 @@ use tvision_gui::*;    // стало (реэкспортирует всё из t
 | Было (терминал) | Стало (окно) |
 |-----------------|--------------|
 | `Program::with_terminal(menu, status)?` | `Program::with_window(menu, status)?` |
-| `Program::new(platform::default_backend()?, menu, status)` | `Program::new(Box::new(GuiBackend::new()?), menu, status)` |
+| `Program::new(platform::default_backend()?, menu, status)` | `Program::new(GuiBackend::boxed()?, menu, status)` |
 
 `with_window` — метод трейта [`ProgramExt`](04-api-reference.md#трейт-programext);
 трейт попадает в область видимости вместе с `use tvision_gui::*;`.
@@ -72,19 +72,27 @@ fn app_main() -> std::io::Result<()> {
 
 ## Шаг 5. Язык надписей
 
-Язык встроенных надписей tvision-rs (`locale::set_language`) хранится
-**отдельно для каждого потока**. Если раньше он включался в начале `main`,
-перенесите вызов в `app_main`:
+Ничего менять не нужно. Язык встроенных надписей tvision-rs
+(`locale::set_language`) хранится отдельно для каждого потока, но `run`
+переносит в поток программы язык, выбранный в `main` до вызова `run`.
+Поэтому оба варианта работают одинаково:
 
 ```rust
+fn main() -> std::io::Result<()> {
+    locale::set_language(locale::Language::Ru);   // в main — перейдёт в поток программы
+    run(GuiConfig::new("Программа"), app_main)
+}
+
 fn app_main() -> std::io::Result<()> {
-    locale::set_language(locale::Language::Ru);   // здесь, а не в main
+    locale::set_language(locale::Language::Ru);   // или здесь — тоже правильно
     let mut app = Program::with_window(...)?;
     ...
 }
 ```
 
-Иначе кнопки окон сообщений, диалоги файлов и поиск останутся английскими.
+Переносится только язык. Другие данные, которые tvision-rs хранит для
+каждого потока, — история строк ввода (`history_add`) — заполняйте внутри
+`app_main`.
 
 ## Шаг 6. Что ещё проверить
 
@@ -106,7 +114,9 @@ fn app_main() -> std::io::Result<()> {
   обычные структуры — подходят; `Rc` — нет, его создавайте уже внутри
   `app_main`).
 
-* **`dos_shell`** — работает: окно прячется, оболочка запускается в консоли,
+* **`dos_shell` и `Program::suspended`** — работают: окно прячется, оболочка
+  или внешняя программа (`app.suspended(|| Command::new("vim").status())`)
+  запускается в консоли,
   из которой запущена программа (в Windows без консоли система сама откроет
   окно консоли для `cmd.exe`). После выхода из оболочки окно показывается
   снова.

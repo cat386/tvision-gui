@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use tvision::event::{MB_LEFT, MB_MIDDLE, MB_RIGHT};
 use tvision::platform::RawEvent;
-use tvision::{Key, KeyEvent, Mods, Point};
+use tvision::{cm, Point};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
@@ -81,8 +81,10 @@ pub(crate) struct App {
     next_blink: Instant,
     /// Окно уже было показано (до первого кадра оно скрыто, чтобы не мелькало пустым).
     shown: bool,
-    /// Сколько раз пользователь пытался закрыть окно.
-    close_requests: u32,
+    /// Когда пользователь в последний раз пытался закрыть окно.
+    last_close: Option<Instant>,
+    /// Когда пришёл последний кадр от программы.
+    last_frame_at: Option<Instant>,
 }
 
 impl App {
@@ -106,7 +108,8 @@ impl App {
             blink_on: true,
             next_blink: Instant::now() + BLINK,
             shown: false,
-            close_requests: 0,
+            last_close: None,
+            last_frame_at: None,
         }
     }
 
@@ -285,6 +288,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Frame => {
                 let f = self.shared.frame.lock().unwrap().take();
                 if let Some(f) = f {
+                    self.last_frame_at = Some(Instant::now());
                     if self.frame.as_ref().map(|o| o.cursor != f.cursor).unwrap_or(true) {
                         self.reset_blink();
                     }
@@ -328,16 +332,21 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
-                self.close_requests += 1;
-                if self.close_requests == 1 {
-                    // Обычный выход Turbo Vision — программа сама спросит про
-                    // несохранённые файлы и т.п.
-                    self.send(RawEvent::Key(KeyEvent::new(Key::Char('x'), Mods::ALT)));
-                } else {
-                    // Повторное закрытие — программа, видимо, не отвечает.
+                let now = Instant::now();
+                // Программа «не отвечает», если после прошлой просьбы закрыть
+                // окно прошло больше 2 секунд, а нового кадра так и не было.
+                let stuck = match self.last_close {
+                    Some(t) => now.duration_since(t) > Duration::from_secs(2) && self.last_frame_at.map(|f| f < t).unwrap_or(true),
+                    None => false,
+                };
+                if stuck {
                     el.exit();
                     std::process::exit(0);
                 }
+                self.last_close = Some(now);
+                // Обычный выход Turbo Vision — команда `cm::QUIT`: программа
+                // сама спросит про несохранённые файлы и т.п.
+                self.send(RawEvent::Command(cm::QUIT));
             }
             WindowEvent::Resized(size) => {
                 if let Some(g) = &mut self.gfx {

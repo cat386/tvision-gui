@@ -11,7 +11,7 @@ pub fn run<F, R>(cfg: GuiConfig, app_main: F) -> R;
 pub fn set_title(title: &str);
 pub fn set_screen_size(cols: u16, rows: u16);
 
-pub struct GuiBackend;           // impl tvision::platform::Backend
+pub struct GuiBackend;           // impl tvision::platform::Backend (new, boxed, ...)
 pub trait ProgramExt;            // Program::with_window, with_window_config
 pub struct GuiConfig;
 pub const VGA_PALETTE: [u32; 16];
@@ -32,7 +32,8 @@ where
 Запускает программу в графическом окне.
 
 1. Создаёт цикл событий окна в **текущем** потоке (он должен быть главным).
-2. Запускает `app_main` в новом потоке с именем `tvision-app`.
+2. Запускает `app_main` в новом потоке с именем `tvision-app` и переносит в
+   него язык надписей (`locale::language()`), выбранный в текущем потоке.
 3. Создаёт окно (пока скрытое) и сообщает размер экрана первому
    `GuiBackend::new()`, вызванному внутри `app_main`.
 4. Показывает окно, когда программа нарисует первый кадр.
@@ -90,6 +91,7 @@ pub struct GuiBackend { /* скрытые поля */ }
 
 impl GuiBackend {
     pub fn new() -> io::Result<Self>;
+    pub fn boxed() -> io::Result<Box<dyn Backend>>;
     pub fn with_config(cfg: GuiConfig) -> io::Result<Self>;
     pub fn set_config(cfg: GuiConfig);
 }
@@ -114,6 +116,15 @@ impl Drop for GuiBackend { ... }
 Ошибки: не удалось создать цикл событий или окно; окно закрылось до запуска
 программы.
 
+### `GuiBackend::boxed()`
+
+То же, что `new()`, но сразу в `Box<dyn Backend>` — прямая замена
+`platform::default_backend()` из tvision-rs:
+
+```rust
+let app = Program::new(GuiBackend::boxed()?, Some(menu()), Some(status()));
+```
+
 ### `GuiBackend::with_config(cfg)`
 
 Если программа не обёрнута в `run`, запоминает `cfg` (как `set_config`) и
@@ -130,11 +141,11 @@ impl Drop for GuiBackend { ... }
 | `size()` | текущий размер сетки в символах |
 | `read(timeout)` | ждёт событие окна (клавиша, мышь, изменение размера) не дольше `timeout` |
 | `flush(screen, cursor, insert)` | передаёт кадр окну; одинаковые кадры подряд не передаются |
-| `suspend()` / `resume()` | прячут и снова показывают окно (для `dos_shell`) |
+| `suspend()` / `resume()` | прячут и снова показывают окно (для `dos_shell` и `Program::suspended`) |
 | `system_clipboard()` | `true` — включается системный буфер обмена tvision-rs |
 
 Если окно уже уничтожено, а программа продолжает читать события, `read`
-возвращает Alt+X (просьба выйти); если программа не выходит долго
+возвращает `RawEvent::Command(cm::QUIT)` (просьба выйти); если программа не выходит долго
 (около 50 попыток), процесс завершается.
 
 При уничтожении (`Drop`) `GuiBackend` закрывает окно.
@@ -247,4 +258,6 @@ pub const GRUVBOX_PALETTE: [u32; 16];
 | `HelpFile`, `HelpWindow`, `ColorDialog`, `Outline` | документация tvision-rs |
 | `message_box`, `input_box`, валидаторы | документация tvision-rs |
 | `locale::set_language` | см. [раздел 2, шаг 5](02-porting.md#шаг-5-язык-надписей) |
+| `Table`, `TreeView`, `ProgressBar`, `FilePanel`, `DualPanel`, `fileops` | документация tvision-rs; примеры — в [разделе 10](10-examples.md) |
+| `color::*` (256 цветов, `palettes::GRUVBOX`, `remap`) | документация tvision-rs; как цвета выглядят в окне — [раздел 3](03-configuration.md#палитра) |
 | `platform::Backend`, `platform::HeadlessBackend` | трейт экрана и тестовый экран |
