@@ -27,7 +27,8 @@ pub fn set_window_palette(palette: [u32; 16]);
 pub fn set_font(path: Option<&Path>, size: f32);
 pub fn current_settings() -> Option<GuiSettings>;
 pub fn apply_saved_settings(app: &mut Program);
-pub struct GuiSettings { pub theme, pub font, pub font_size }   // load, save, path, parse
+pub struct GuiSettings { pub theme, pub font, pub font_size, pub window }  // load, save, path, local_path, user_path
+pub struct WindowGeometry { pub cols, pub rows, pub position, pub maximized, pub fullscreen }
 pub fn monospace_fonts() -> Vec<FontInfo>;
 pub struct FontInfo { pub name: String, pub path: PathBuf }
 pub const FONT_SIZE_MIN: i64 = 6;

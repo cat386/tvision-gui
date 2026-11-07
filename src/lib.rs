@@ -72,8 +72,15 @@
 //!
 //! [`settings_dialog`] — стандартный диалог: тема оформления ([`themes`]),
 //! моноширинный шрифт системы и размер шрифта. Изменения видны сразу, выбор
-//! запоминается между запусками ([`GuiSettings`],
-//! [`GuiConfig::remember_settings`]).
+//! запоминается между запусками.
+//!
+//! ## Файл настроек
+//!
+//! При выходе тема, шрифт, размер шрифта, размер и положение окна
+//! записываются в `ИМЯ.conf` рядом с программой (если там писать нельзя —
+//! в профиль пользователя), при запуске читаются оттуда. Нет файла —
+//! программа запускается с настройками по умолчанию из [`GuiConfig`].
+//! См. [`GuiSettings`], [`GuiConfig::remember_settings`].
 //!
 //! ## Язык надписей
 //!
@@ -113,6 +120,6 @@ pub use backend::{run, set_screen_size, set_title, GuiBackend, ProgramExt};
 pub use config::{GuiConfig, GRUVBOX_PALETTE, VGA_PALETTE};
 pub use font::{monospace_fonts, FontInfo};
 pub use settings::{
-    apply_saved_settings, apply_theme, current_settings, find_theme, set_font, set_window_palette, settings_dialog, themes, GuiSettings, Theme,
+    apply_saved_settings, apply_theme, current_settings, find_theme, set_font, set_window_palette, settings_dialog, themes, GuiSettings, Theme, WindowGeometry,
     FONT_SIZE_MAX, FONT_SIZE_MIN,
 };

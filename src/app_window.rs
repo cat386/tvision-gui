@@ -15,7 +15,7 @@ use tvision::event::{MB_LEFT, MB_MIDDLE, MB_RIGHT};
 use tvision::platform::RawEvent;
 use tvision::{cm, Point};
 use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalSize;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState};
@@ -26,6 +26,7 @@ use crate::config::GuiConfig;
 use crate::font::FontSet;
 use crate::keys;
 use crate::render::{Frame, Renderer};
+use crate::settings::WindowGeometry;
 
 /// Период мигания курсора (как в консоли Windows).
 const BLINK: Duration = Duration::from_millis(530);
@@ -89,12 +90,16 @@ pub(crate) struct App {
     last_close: Option<Instant>,
     /// Когда пришёл последний кадр от программы.
     last_frame_at: Option<Instant>,
+    /// Размер и положение «обычного» окна (не развёрнутого и не на весь
+    /// экран) — то, что сохраняется в файл настроек.
+    windowed: WindowGeometry,
 }
 
 impl App {
     pub fn new(cfg: GuiConfig, shared: Arc<Shared>, tx: Sender<RawEvent>, ready: Sender<Result<Point, String>>) -> Self {
         let grid = Point::new(cfg.cols as i32, cfg.rows as i32);
         let font_size = cfg.font_size;
+        let windowed = WindowGeometry { cols: cfg.cols, rows: cfg.rows, position: cfg.position, maximized: cfg.maximized, fullscreen: cfg.fullscreen };
         App {
             cfg,
             shared,
@@ -114,6 +119,7 @@ impl App {
             shown: false,
             last_close: None,
             last_frame_at: None,
+            windowed,
         }
     }
 
@@ -147,6 +153,21 @@ impl App {
         if self.cfg.fullscreen {
             attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
+        if self.cfg.maximized {
+            attrs = attrs.with_maximized(true);
+        }
+        // Сохранённое положение — только если оно на одном из мониторов
+        // (монитор могли отключить с прошлого запуска).
+        if let Some((x, y)) = self.cfg.position {
+            let visible = el.available_monitors().any(|m| {
+                let (p, s) = (m.position(), m.size());
+                let (cx, cy) = (x + 40, y + 10);
+                cx >= p.x && cx < p.x + s.width as i32 && cy >= p.y && cy < p.y + s.height as i32
+            });
+            if visible {
+                attrs = attrs.with_position(PhysicalPosition::new(x, y));
+            }
+        }
         let window = Rc::new(el.create_window(attrs).map_err(|e| format!("не удалось создать окно: {}", e))?);
 
         let scale = window.scale_factor();
@@ -162,13 +183,44 @@ impl App {
         let mut renderer = Renderer::new(font, self.cfg.palette);
         // Диалог настроек и программа видят, с какими настройками открыто окно.
         crate::settings::init_current(
-            crate::settings::GuiSettings { theme: self.cfg.theme.clone(), font: self.cfg.font_path.clone(), font_size: self.font_size },
+            crate::settings::GuiSettings {
+                theme: self.cfg.theme.clone(),
+                font: self.cfg.font_path.clone(),
+                font_size: self.font_size,
+                window: Some(self.windowed.clone()),
+            },
             self.cfg.palette,
             self.cfg.remember_settings,
         );
         let inner = window.inner_size();
         renderer.resize(inner.width as usize, inner.height as usize);
         Ok(Gfx { window, _context: context, surface, renderer })
+    }
+
+    /// Запоминает размер и положение окна для файла настроек. Размер и
+    /// положение берутся только у обычного окна: у развёрнутого, свёрнутого
+    /// или полноэкранного запоминается лишь сам этот режим.
+    fn note_geometry(&mut self) {
+        let Some(g) = &self.gfx else { return };
+        let w = &g.window;
+        if w.is_minimized() == Some(true) {
+            return;
+        }
+        let full = w.fullscreen().is_some();
+        let max = w.is_maximized();
+        self.windowed.fullscreen = full;
+        self.windowed.maximized = max;
+        if !full && !max {
+            self.windowed.cols = self.grid.x.clamp(1, u16::MAX as i32) as u16;
+            self.windowed.rows = self.grid.y.clamp(1, u16::MAX as i32) as u16;
+            // В Windows у свёрнутого окна координаты −32000.
+            if let Ok(p) = w.outer_position() {
+                if p.x > -30000 && p.y > -30000 {
+                    self.windowed.position = Some((p.x, p.y));
+                }
+            }
+        }
+        crate::settings::note_geometry(self.windowed.clone());
     }
 
     /// Пересчитывает сетку по размеру окна; если она изменилась — сообщает программе.
@@ -195,6 +247,7 @@ impl App {
         g.renderer.set_font(font);
         g.window.request_redraw();
         self.update_grid();
+        self.note_geometry();
     }
 
     /// Горячие клавиши самого окна. Возвращает `true`, если клавиша обработана.
@@ -363,6 +416,8 @@ impl ApplicationHandler<UserEvent> for App {
                     None => false,
                 };
                 if stuck {
+                    // Программа не отвечает: настройки сохраняем сами.
+                    let _ = crate::settings::save_current();
                     el.exit();
                     std::process::exit(0);
                 }
@@ -377,7 +432,9 @@ impl ApplicationHandler<UserEvent> for App {
                     g.window.request_redraw();
                 }
                 self.update_grid();
+                self.note_geometry();
             }
+            WindowEvent::Moved(_) => self.note_geometry(),
             WindowEvent::ScaleFactorChanged { .. } => {
                 // Монитор с другим масштабом: шрифт в физических пикселях меняется.
                 // Новый размер окна придёт отдельным событием Resized.

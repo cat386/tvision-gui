@@ -51,9 +51,17 @@ pub struct GuiConfig {
     /// палитру программы, и 16 цветов окна. `None` — палитра программы по
     /// умолчанию (gruvbox) и палитра окна из поля `palette`.
     pub theme: Option<String>,
-    /// Запоминать выбор пользователя в диалоге настроек
-    /// ([`crate::settings_dialog`]) и восстанавливать его при запуске.
-    /// Сохранённые тема, шрифт и размер важнее значений из кода.
+    /// Положение окна на экране (физические пиксели). `None` — окно ставит
+    /// оконная система.
+    pub position: Option<(i32, i32)>,
+    /// Открыть окно развёрнутым (как кнопкой «Развернуть» в заголовке).
+    pub maximized: bool,
+    /// Сохранять настройки окна в файл и читать их при запуске: тему,
+    /// шрифт и размер шрифта (из [`crate::settings_dialog`]), размер и
+    /// положение окна. Файл — `ИМЯ.conf` рядом с программой (или в профиле
+    /// пользователя, если рядом писать нельзя). Если файла нет, программа
+    /// запускается с настройками из кода. Сохранённые настройки важнее
+    /// значений из кода.
     pub remember_settings: bool,
 }
 
@@ -75,6 +83,8 @@ impl Default for GuiConfig {
             resizable: true,
             fullscreen: false,
             theme: None,
+            position: None,
+            maximized: false,
             remember_settings: true,
         }
     }
@@ -141,6 +151,18 @@ impl GuiConfig {
         self
     }
 
+    /// Положение окна на экране в физических пикселях.
+    pub fn position(mut self, x: i32, y: i32) -> Self {
+        self.position = Some((x, y));
+        self
+    }
+
+    /// Открыть окно развёрнутым.
+    pub fn maximized(mut self, on: bool) -> Self {
+        self.maximized = on;
+        self
+    }
+
     /// Запоминать ли настройки, выбранные в диалоге настроек.
     pub fn remember_settings(mut self, on: bool) -> Self {
         self.remember_settings = on;
@@ -158,6 +180,12 @@ impl GuiConfig {
                 }
                 self.font_path = s.font;
                 self = self.font_size(s.font_size);
+                if let Some(g) = s.window {
+                    self = self.size(g.cols, g.rows);
+                    self.position = g.position;
+                    self.maximized = g.maximized;
+                    self.fullscreen = g.fullscreen;
+                }
             }
         }
         if let Some(t) = self.theme.as_deref().and_then(crate::settings::find_theme) {

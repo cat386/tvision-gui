@@ -104,7 +104,23 @@ pub fn find_theme(name: &str) -> Option<Theme> {
 // Настройки и их хранение
 // ----------------------------------------------------------------------
 
-/// Выбор пользователя: тема, шрифт, размер шрифта.
+/// Размер и положение окна.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WindowGeometry {
+    /// Размер экрана в символах (в обычном, не полноэкранном окне).
+    pub cols: u16,
+    pub rows: u16,
+    /// Положение левого верхнего угла окна на экране (физические пиксели).
+    /// `None` — оконная система не сообщает его (Wayland): окно поставит она.
+    pub position: Option<(i32, i32)>,
+    /// Окно развёрнуто на весь экран кнопкой заголовка.
+    pub maximized: bool,
+    /// Полноэкранный режим (Alt+Enter).
+    pub fullscreen: bool,
+}
+
+/// Настройки окна, которые хранятся в файле: тема, шрифт, размер шрифта,
+/// размер и положение окна.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GuiSettings {
     /// Название темы (`None` — оформление программы не менялось).
@@ -113,23 +129,47 @@ pub struct GuiSettings {
     pub font: Option<PathBuf>,
     /// Размер шрифта в логических пикселях.
     pub font_size: f32,
+    /// Размер и положение окна (`None` — не сохранялись).
+    pub window: Option<WindowGeometry>,
+}
+
+/// Имя файла настроек: имя исполняемого файла без расширения + `.conf`.
+fn file_name() -> Option<(PathBuf, String)> {
+    let exe = std::env::current_exe().ok()?;
+    let name = format!("{}.conf", exe.file_stem()?.to_string_lossy());
+    Some((exe.parent()?.to_path_buf(), name))
 }
 
 impl GuiSettings {
-    /// Файл настроек этой программы:
+    /// Файл настроек **рядом с программой**: `ИМЯ.conf` в каталоге
+    /// исполняемого файла (`tvdemo.exe` → `tvdemo.conf`).
+    pub fn local_path() -> Option<PathBuf> {
+        let (dir, name) = file_name()?;
+        Some(dir.join(name))
+    }
+
+    /// Запасной файл настроек в профиле пользователя — на случай, если рядом
+    /// с программой писать нельзя (например, она установлена в
+    /// `C:\Program Files`):
     ///
     /// * Windows — `%APPDATA%\tvision-gui\ИМЯ.conf`;
     /// * macOS — `~/Library/Application Support/tvision-gui/ИМЯ.conf`;
     /// * Linux, BSD — `$XDG_CONFIG_HOME/tvision-gui/ИМЯ.conf` (обычно `~/.config/...`).
-    ///
-    /// ИМЯ — имя исполняемого файла без расширения.
-    pub fn path() -> Option<PathBuf> {
-        let exe = std::env::current_exe().ok()?;
-        let name = exe.file_stem()?.to_string_lossy().into_owned();
-        Some(config_dir()?.join("tvision-gui").join(format!("{}.conf", name)))
+    pub fn user_path() -> Option<PathBuf> {
+        let (_, name) = file_name()?;
+        Some(config_dir()?.join("tvision-gui").join(name))
     }
 
-    /// Прочитать сохранённые настройки (`None` — файла нет или он пуст).
+    /// Файл, из которого читаются настройки: рядом с программой, если он
+    /// там есть, иначе в профиле пользователя, если есть там. `None` —
+    /// файла нет нигде (программа запускается с настройками по умолчанию).
+    pub fn path() -> Option<PathBuf> {
+        [Self::local_path(), Self::user_path()].into_iter().flatten().find(|p| p.is_file())
+    }
+
+    /// Прочитать сохранённые настройки. `None` — файла нет, он пуст или не
+    /// читается: тогда программа работает с настройками по умолчанию
+    /// (из `GuiConfig`).
     pub fn load() -> Option<Self> {
         Self::load_from(&Self::path()?)
     }
@@ -140,9 +180,12 @@ impl GuiSettings {
         Self::parse(&text)
     }
 
-    /// Разобрать текст файла настроек (строки `ключ = значение`).
+    /// Разобрать текст файла настроек (строки `ключ = значение`;
+    /// неизвестные ключи и строки с `#` пропускаются).
     pub fn parse(text: &str) -> Option<Self> {
-        let mut s = GuiSettings { theme: None, font: None, font_size: 0.0 };
+        let mut s = GuiSettings { theme: None, font: None, font_size: 0.0, window: None };
+        let mut g = WindowGeometry { cols: 0, rows: 0, position: None, maximized: false, fullscreen: false };
+        let (mut x, mut y) = (None, None);
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -150,31 +193,72 @@ impl GuiSettings {
             }
             let Some((k, v)) = line.split_once('=') else { continue };
             let v = v.trim();
+            let flag = matches!(v, "1" | "true" | "yes" | "да");
             match k.trim() {
                 "theme" if !v.is_empty() => s.theme = Some(v.to_string()),
                 "font" if !v.is_empty() => s.font = Some(PathBuf::from(v)),
                 "font_size" => s.font_size = v.parse().unwrap_or(0.0),
+                "cols" => g.cols = v.parse().unwrap_or(0),
+                "rows" => g.rows = v.parse().unwrap_or(0),
+                "x" => x = v.parse().ok(),
+                "y" => y = v.parse().ok(),
+                "maximized" => g.maximized = flag,
+                "fullscreen" => g.fullscreen = flag,
                 _ => {}
             }
+        }
+        if let (Some(x), Some(y)) = (x, y) {
+            g.position = Some((x, y));
+        }
+        if g.cols > 0 && g.rows > 0 {
+            s.window = Some(g);
         }
         (s.font_size > 0.0).then_some(s)
     }
 
     /// Текст файла настроек.
     pub fn to_text(&self) -> String {
-        format!(
-            "# Настройки окна tvision-gui (диалог «Настройки»)\ntheme = {}\nfont = {}\nfont_size = {}\n",
-            self.theme.as_deref().unwrap_or(""),
-            self.font.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
-            self.font_size
-        )
+        let mut t = String::from("# Настройки окна tvision-gui. Файл можно удалить —\n# тогда программа запустится с настройками по умолчанию.\n");
+        t.push_str(&format!("theme = {}\n", self.theme.as_deref().unwrap_or("")));
+        t.push_str(&format!("font = {}\n", self.font.as_ref().map(|p| p.display().to_string()).unwrap_or_default()));
+        t.push_str(&format!("font_size = {}\n", self.font_size));
+        if let Some(g) = &self.window {
+            t.push_str(&format!("cols = {}\nrows = {}\n", g.cols, g.rows));
+            if let Some((x, y)) = g.position {
+                t.push_str(&format!("x = {}\ny = {}\n", x, y));
+            }
+            t.push_str(&format!("maximized = {}\nfullscreen = {}\n", g.maximized as u8, g.fullscreen as u8));
+        }
+        t
     }
 
-    /// Записать настройки в файл программы ([`GuiSettings::path`]).
-    pub fn save(&self) -> std::io::Result<()> {
-        let path = Self::path().ok_or_else(|| std::io::Error::other("не найден каталог для настроек"))?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+    /// Записать настройки: рядом с программой, а если там нельзя — в профиль
+    /// пользователя. Возвращает путь записанного файла.
+    pub fn save(&self) -> std::io::Result<PathBuf> {
+        let text = self.to_text();
+        let mut last_err = std::io::Error::other("не найден каталог для настроек");
+        for p in [Self::local_path(), Self::user_path()].into_iter().flatten() {
+            let r = p.parent().map(std::fs::create_dir_all).unwrap_or(Ok(())).and_then(|_| std::fs::write(&p, &text));
+            match r {
+                Ok(()) => {
+                    // Не оставляем рядом старую копию, которая читалась бы первой.
+                    if Some(&p) != Self::local_path().as_ref() {
+                        if let Some(l) = Self::local_path() {
+                            let _ = std::fs::remove_file(l);
+                        }
+                    }
+                    return Ok(p);
+                }
+                Err(e) => last_err = e,
+            }
+        }
+        Err(last_err)
+    }
+
+    /// Записать настройки в заданный файл.
+    pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d)?;
         }
         std::fs::write(path, self.to_text())
     }
@@ -221,7 +305,22 @@ pub(crate) fn note_font_size(size: f32) {
     }
 }
 
-/// Текущие тема, шрифт и размер шрифта окна (`None` — окна ещё нет).
+/// Окно изменило размер или положение (вызывает поток окна).
+pub(crate) fn note_geometry(g: WindowGeometry) {
+    if let Some(s) = CURRENT.lock().unwrap().as_mut() {
+        s.settings.window = Some(g);
+    }
+}
+
+/// Записать текущие настройки в файл, если включено запоминание
+/// (`GuiConfig::remember_settings`). Вызывается при выходе из программы и
+/// по кнопке «OK» диалога настроек.
+pub(crate) fn save_current() -> Option<std::io::Result<PathBuf>> {
+    let s = CURRENT.lock().unwrap().as_ref().filter(|s| s.remember).map(|s| s.settings.clone())?;
+    Some(s.save())
+}
+
+/// Текущие настройки окна (`None` — окна ещё нет).
 pub fn current_settings() -> Option<GuiSettings> {
     CURRENT.lock().unwrap().as_ref().map(|s| s.settings.clone())
 }
@@ -299,7 +398,7 @@ fn tr(ru: &'static str, en: &'static str) -> &'static str {
 pub fn settings_dialog(app: &mut Program) -> bool {
     let fonts: Vec<FontInfo> = monospace_fonts();
     let themes = themes();
-    let start = current_settings().unwrap_or(GuiSettings { theme: None, font: None, font_size: 16.0 });
+    let start = current_settings().unwrap_or(GuiSettings { theme: None, font: None, font_size: 16.0, window: None });
     let start_palette = app.palette.clone();
     let start_window = CURRENT.lock().unwrap().as_ref().map(|s| s.window_palette).unwrap_or(GRUVBOX_PALETTE);
 
@@ -373,13 +472,8 @@ pub fn settings_dialog(app: &mut Program) -> bool {
     });
 
     if cmd == cm::OK {
-        let remember = CURRENT.lock().unwrap().as_ref().map(|s| s.remember).unwrap_or(false);
-        if remember {
-            if let Some(s) = current_settings() {
-                if let Err(e) = s.save() {
-                    message_box(app, &format!("{}\n{}", tr("Не удалось сохранить настройки:", "Could not save settings:"), e), mf::ERROR | mf::OK_BUTTON);
-                }
-            }
+        if let Some(Err(e)) = save_current() {
+            message_box(app, &format!("{}\n{}", tr("Не удалось сохранить настройки:", "Could not save settings:"), e), mf::ERROR | mf::OK_BUTTON);
         }
         true
     } else {
@@ -408,11 +502,26 @@ mod tests {
 
     #[test]
     fn settings_text_roundtrip() {
-        let s = GuiSettings { theme: Some("Сумерки".into()), font: Some(PathBuf::from("/fonts/Mono.ttf")), font_size: 18.0 };
+        let g = WindowGeometry { cols: 100, rows: 30, position: Some((-8, 120)), maximized: true, fullscreen: false };
+        let s = GuiSettings { theme: Some("Сумерки".into()), font: Some(PathBuf::from("/fonts/Mono.ttf")), font_size: 18.0, window: Some(g) };
         assert_eq!(GuiSettings::parse(&s.to_text()), Some(s));
-        let sys = GuiSettings { theme: None, font: None, font_size: 14.0 };
+        let sys = GuiSettings { theme: None, font: None, font_size: 14.0, window: None };
         assert_eq!(GuiSettings::parse(&sys.to_text()), Some(sys));
         assert_eq!(GuiSettings::parse("# пусто\n"), None);
+        // Положение без размера не сохраняется; Wayland — размер без положения.
+        let w = GuiSettings::parse("font_size = 16\ncols = 90\nrows = 40\n").unwrap().window.unwrap();
+        assert_eq!((w.cols, w.rows, w.position), (90, 40, None));
+    }
+
+    #[test]
+    fn save_and_load_file() {
+        let p = std::env::temp_dir().join(format!("tvgui-settings-{}.conf", std::process::id()));
+        let s = GuiSettings { theme: Some("Gruvbox".into()), font: None, font_size: 20.0, window: None };
+        s.save_to(&p).unwrap();
+        assert_eq!(GuiSettings::load_from(&p), Some(s));
+        let _ = std::fs::remove_file(&p);
+        // Файла нет — настроек нет (программа возьмёт значения по умолчанию).
+        assert_eq!(GuiSettings::load_from(&p), None);
     }
 
     #[test]

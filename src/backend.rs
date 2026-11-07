@@ -303,7 +303,12 @@ impl Backend for GuiBackend {
 
 impl Drop for GuiBackend {
     fn drop(&mut self) {
-        // Программа закончилась — закрываем окно.
+        // Программа закончилась — сохраняем настройки окна (тема, шрифт,
+        // размер и положение окна), если включено запоминание.
+        if let Some(Err(e)) = crate::settings::save_current() {
+            eprintln!("tvision-gui: не удалось сохранить настройки: {}", e);
+        }
+        // И закрываем окно.
         let _ = self.proxy.send_event(UserEvent::Exit);
     }
 }
